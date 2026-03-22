@@ -1,5 +1,6 @@
 from dataclasses import dataclass,field
 from textwrap import shorten
+import json
 
 @dataclass
 class BoundingBox:
@@ -80,12 +81,26 @@ class DOMState:
     selector_map: dict[str,DOMElementNode|ScrollElementNode]=field(default_factory=dict)
 
     def interactive_elements_to_string(self)->str:
-        return '\n'.join([f'{index} - Tag: {node.tag} Role: {node.role} Name: {node.name} Attributes: {node.attributes} Cordinates: {node.center.to_string()}' for index,(node) in enumerate(self.interactive_nodes)])
-    
+        if not self.interactive_nodes:
+            return 'No interactive elements'
+        header = '# id|tag|role|name|coords|attributes'
+        rows = [header]
+        for index, node in enumerate(self.interactive_nodes):
+            row = f'{index}|{node.tag}|{node.role}|{node.name}|{node.center.to_string()}|{json.dumps(node.attributes)}'
+            rows.append(row)
+        return '\n'.join(rows)
+
     def informative_elements_to_string(self)->str:
         return  '\n'.join([f'Tag: {node.tag} Role: {node.role} Content: {node.content}' for node in self.informative_nodes])
-    
+
     def scrollable_elements_to_string(self)->str:
-        n=len(self.interactive_nodes)
-        return '\n'.join([f'{n+index} - Tag: {node.tag} Role: {node.role} Name: {shorten(node.name,width=500)} Attributes: {node.attributes}' for index,node in enumerate(self.scrollable_nodes)])
+        if not self.scrollable_nodes:
+            return 'No scrollable elements'
+        header = '# id|tag|role|name|attributes'
+        rows = [header]
+        base_index = len(self.interactive_nodes)
+        for index, node in enumerate(self.scrollable_nodes):
+            row = f'{base_index + index}|{node.tag}|{node.role}|{shorten(node.name, width=500)}|{json.dumps(node.attributes)}'
+            rows.append(row)
+        return '\n'.join(rows)
     

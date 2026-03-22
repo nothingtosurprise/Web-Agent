@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from asyncio import sleep
 import asyncio
 import json
+import time
 
 if TYPE_CHECKING:
     from src.agent.session import Session
@@ -117,6 +118,8 @@ class DOM:
             await self.session._wait_for_page(timeout=10.0)
             sid = self.session._get_current_session_id()
 
+            t0 = time.perf_counter()
+
             snapshot, ax_result, viewport, dpr = await asyncio.gather(
                 self.session.browser.send('DOMSnapshot.captureSnapshot', {
                     'computedStyles': COMPUTED_STYLES,
@@ -147,13 +150,25 @@ class DOM:
                 except Exception:
                     pass  # keep all if JS fails
 
+            state_capture_ms = (time.perf_counter() - t0) * 1000
+
             screenshot = None
+            screenshot_capture_ms = 0.0
             if use_vision and interactive:
+                t1 = time.perf_counter()
                 boxes = [n.bounding_box.to_dict() for n in interactive]
                 await self.session.execute_script(_MARK_PAGE_JS.replace('BOXES', json.dumps(boxes)))
                 await sleep(0.1)
                 screenshot = await self.session.get_screenshot()
                 await self.session.execute_script(_UNMARK_PAGE_JS)
+                screenshot_capture_ms = (time.perf_counter() - t1) * 1000
+
+            print(
+                f'DOM state: state_capture_ms={state_capture_ms:.1f} '
+                f'screenshot_capture_ms={screenshot_capture_ms:.1f} '
+                f'total_ms={state_capture_ms + screenshot_capture_ms:.1f} '
+                f'interactive={len(interactive)} scrollable={len(scrollable)} use_vision={use_vision}'
+            )
 
         except Exception as e:
             print(f'Failed to get DOM state: {e}')

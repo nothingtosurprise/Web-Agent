@@ -8,7 +8,7 @@ load_dotenv()
 
 llm = ChatNvidia(model='qwen/qwen3.5-122b-a10b', temperature=0)
 config = BrowserConfig(browser='edge', headless=False)
-agent = Agent(config=config, llm=llm, use_vision=True, max_steps=100)
+agent = Agent(config=config, llm=llm, use_vision=False, max_steps=100)
 
 user_query = input('Enter your query: ')
 agent.print_response(user_query)
