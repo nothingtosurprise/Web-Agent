@@ -1,58 +1,15 @@
-from src.agent.session.views import BrowserState, Tab
-from src.agent.dom.views import DOMElementNode, DOMState
+from __future__ import annotations
+
 from src.agent.browser import Browser
-from collections import deque
-from pathlib import Path
-from typing import Any
-import asyncio
-import base64
-import json
-import random
-import os
-import re
-
-
-
-
-
-_SPECIAL_KEYS: dict[str, dict] = {
-    'Enter':     {'key': 'Enter',     'code': 'Enter',      'keyCode': 13},
-    'Escape':    {'key': 'Escape',    'code': 'Escape',     'keyCode': 27},
-    'Tab':       {'key': 'Tab',       'code': 'Tab',        'keyCode': 9},
-    'Backspace': {'key': 'Backspace', 'code': 'Backspace',  'keyCode': 8},
-    'Delete':    {'key': 'Delete',    'code': 'Delete',     'keyCode': 46},
-    'PageUp':    {'key': 'PageUp',    'code': 'PageUp',     'keyCode': 33},
-    'PageDown':  {'key': 'PageDown',  'code': 'PageDown',   'keyCode': 34},
-    'ArrowUp':   {'key': 'ArrowUp',   'code': 'ArrowUp',    'keyCode': 38},
-    'ArrowDown': {'key': 'ArrowDown', 'code': 'ArrowDown',  'keyCode': 40},
-    'ArrowLeft': {'key': 'ArrowLeft', 'code': 'ArrowLeft',  'keyCode': 37},
-    'ArrowRight':{'key': 'ArrowRight','code': 'ArrowRight', 'keyCode': 39},
-    'Home':      {'key': 'Home',      'code': 'Home',       'keyCode': 36},
-    'End':       {'key': 'End',       'code': 'End',        'keyCode': 35},
-    'F5':        {'key': 'F5',        'code': 'F5',         'keyCode': 116},
-    ' ':         {'key': ' ',         'code': 'Space',      'keyCode': 32},
-    'Space':     {'key': ' ',         'code': 'Space',      'keyCode': 32},
-}
-
-_MODIFIER_KEYS: dict[str, dict] = {
-    'Control': {'key': 'Control', 'code': 'ControlLeft', 'keyCode': 17, 'bit': 2},
-    'Ctrl':    {'key': 'Control', 'code': 'ControlLeft', 'keyCode': 17, 'bit': 2},
-    'Shift':   {'key': 'Shift',   'code': 'ShiftLeft',   'keyCode': 16, 'bit': 8},
-    'Alt':     {'key': 'Alt',     'code': 'AltLeft',     'keyCode': 18, 'bit': 1},
-    'Meta':    {'key': 'Meta',    'code': 'MetaLeft',    'keyCode': 91, 'bit': 4},
-    'Command': {'key': 'Meta',    'code': 'MetaLeft',    'keyCode': 91, 'bit': 4},
-}
-
-
-def _parse_key_combo(keys_str: str):
-    parts = [p.strip() for p in keys_str.split('+')]
-    mods = [_MODIFIER_KEYS[p] for p in parts[:-1] if p in _MODIFIER_KEYS]
-    return mods, parts[-1]
+from src.agent.dom.views import DOMElementNode
 
 
 class Session:
+    """Compatibility wrapper over the browser-owned session model."""
+
     def __init__(self, browser: Browser):
         self.browser = browser
+
 
         # CDP session state
         self._targets:    dict[str, dict]           = {}
@@ -81,87 +38,9 @@ class Session:
     # Session init / teardown
     # ------------------------------------------------------------------
 
+
     async def init_session(self):
-        await self.browser.get_cdp_client()
-
-        self.browser.on('Target.attachedToTarget',   self._on_attached)
-        self.browser.on('Target.detachedFromTarget', self._on_detached)
-        self.browser.on('Target.targetInfoChanged',  self._on_target_info_changed)
-        self.browser.on('Page.lifecycleEvent',       self._on_lifecycle_event)
-
-        for watchdog in self._watchdogs:
-            await watchdog.attach()
-
-        await self.browser.send('Target.setAutoAttach', {
-            'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True,
-        })
-        await self.browser.send('Target.setDiscoverTargets', {
-            'discover': True, 'filter': [{'type': 'page'}],
-        })
-
-        result = await self.browser.send('Target.getTargets', {'filter': [{'type': 'page'}]})
-        page_targets = result.get('targetInfos', [])
-
-        if page_targets:
-            self._current_target_id = page_targets[0]['targetId']
-            for info in page_targets:
-                tid = info['targetId']
-                attach = await self.browser.send('Target.attachToTarget', {'targetId': tid, 'flatten': True})
-                sid = attach['sessionId']
-                self._targets[tid]   = {'url': info['url'], 'title': info.get('title', '')}
-                self._sessions[tid]  = sid
-                self._lifecycle[sid] = deque(maxlen=50)
-                await self._init_session_domains(sid)
-        else:
-            r = await self.browser.send('Target.createTarget', {'url': 'about:blank'})
-            self._current_target_id = r['targetId']
-            attach = await self.browser.send('Target.attachToTarget', {
-                'targetId': self._current_target_id, 'flatten': True,
-            })
-            sid = attach['sessionId']
-            self._targets[self._current_target_id]  = {'url': 'about:blank', 'title': ''}
-            self._sessions[self._current_target_id] = sid
-            self._lifecycle[sid] = deque(maxlen=50)
-            await self._init_session_domains(sid)
-
-    async def _init_session_domains(self, session_id: str):
-        await asyncio.gather(
-            self.browser.send('Page.enable',    {}, session_id=session_id),
-            self.browser.send('Runtime.enable', {}, session_id=session_id),
-            self.browser.send('Network.enable', {}, session_id=session_id),
-        )
-        await self.browser.send('Page.setLifecycleEventsEnabled',
-                                {'enabled': True}, session_id=session_id)
-        await self.browser.send('Target.setAutoAttach', {
-            'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True,
-        }, session_id=session_id)
-
-        try:
-            await self.browser.send('Emulation.setUserAgentOverride', {
-                'userAgent': (
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'
-                ),
-                'acceptLanguage': 'en-US,en;q=0.9',
-                'platform': 'Win32',
-            }, session_id=session_id)
-        except Exception:
-            pass
-
-        with open('./src/agent/session/script.js') as f:
-            anti_detect = f.read()
-        try:
-            await self.browser.send('Page.addScriptToEvaluateOnNewDocument',
-                                    {'source': anti_detect}, session_id=session_id)
-        except Exception:
-            pass
-        try:
-            await self.browser.send('Runtime.evaluate', {
-                'expression': anti_detect, 'returnByValue': False,
-            }, session_id=session_id)
-        except Exception:
-            pass
+        await self.browser.ensure_open()
 
     async def disconnect(self):
         """Disconnect from the browser without closing tabs or terminating the process.
@@ -739,7 +618,8 @@ class Session:
             await self.browser.send('Network.setCookies', {'cookies': cookies})
 
     async def get_element_by_index(self, index: int) -> DOMElementNode:
-        selector_map = self._browser_state.dom_state.selector_map
+        browser_state = self.browser._browser_state or await self.browser.get_state()
+        selector_map = browser_state.dom_state.selector_map
         if index not in selector_map:
             raise Exception(f'Element at index {index} not found in selector map')
         return selector_map[index]

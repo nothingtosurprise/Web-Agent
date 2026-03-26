@@ -39,6 +39,7 @@ class Client(Domains):
         self.id_counter: Annotated[int, add] = 0
         self.pending_requests: Dict[int, asyncio.Future] = {}
         self.event_handlers: Dict[str, List[Callable[[Any, Optional[str]], None]]] = {}
+        self.on_disconnect: Optional[Callable] = None
         
         if refresh:
             self.refresh()
@@ -182,3 +183,12 @@ class Client(Domains):
             except Exception as e:
                 logging.error(f"Error in CDP listen loop: {e}")
                 break
+
+        if self.on_disconnect:
+            try:
+                if asyncio.iscoroutinefunction(self.on_disconnect):
+                    asyncio.create_task(self.on_disconnect())
+                else:
+                    self.on_disconnect()
+            except Exception as e:
+                logging.error(f"Error in on_disconnect handler: {e}")

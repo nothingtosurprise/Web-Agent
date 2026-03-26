@@ -16,16 +16,16 @@ class DownloadWatchdog(BaseWatchdog):
 
     async def attach(self) -> None:
         try:
-            await self.session.browser.send('Browser.setDownloadBehavior', {
+            await self.session.send('Browser.setDownloadBehavior', {
                 'behavior':      'allow',
-                'downloadPath':  self.session.browser.config.downloads_dir,
+                'downloadPath':  self.session.config.downloads_dir,
                 'eventsEnabled': True,
             })
         except Exception:
             pass
 
-        self.session.browser.on('Browser.downloadWillBegin', self._on_begin)
-        self.session.browser.on('Browser.downloadProgress',  self._on_progress)
+        self.session.on('Browser.downloadWillBegin', self._on_begin)
+        self.session.on('Browser.downloadProgress',  self._on_progress)
 
     def _on_begin(self, event, session_id=None) -> None:
         guid     = event.get('guid', '')

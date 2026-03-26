@@ -10,7 +10,7 @@ class DialogWatchdog(BaseWatchdog):
     """
 
     async def attach(self) -> None:
-        self.session.browser.on('Page.javascriptDialogOpening', self._on_dialog)
+        self.session.on('Page.javascriptDialogOpening', self._on_dialog)
 
     async def _on_dialog(self, event, session_id=None) -> None:
         if not session_id:
@@ -19,7 +19,7 @@ class DialogWatchdog(BaseWatchdog):
         message     = event.get('message', '')
         print(f'[DialogWatchdog] Auto-dismissing {dialog_type}: "{message}"')
         try:
-            await self.session.browser.send(
+            await self.session.send(
                 'Page.handleJavaScriptDialog',
                 {'accept': True, 'promptText': ''},
                 session_id=session_id,

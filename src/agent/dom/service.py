@@ -121,12 +121,12 @@ class DOM:
             t0 = time.perf_counter()
 
             snapshot, ax_result, viewport, dpr = await asyncio.gather(
-                self.session.browser.send('DOMSnapshot.captureSnapshot', {
+                self.session.send('DOMSnapshot.captureSnapshot', {
                     'computedStyles': COMPUTED_STYLES,
                     'includePaintOrder': True,
                     'includeDOMRects': True,
                 }, session_id=sid),
-                self.session.browser.send('Accessibility.getFullAXTree', {}, session_id=sid),
+                self.session.send('Accessibility.getFullAXTree', {}, session_id=sid),
                 self.session.get_viewport(),
                 self.session.execute_script('window.devicePixelRatio || 1'),
             )

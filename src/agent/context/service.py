@@ -33,7 +33,7 @@ class Context:
         content = template.format(**{
             'datetime':      datetime.now().strftime('%A, %B %d, %Y'),
             'os':            platform.system(),
-            'browser':       browser.config.browser.capitalize(),
+            'browser':       browser.config.resolved_browser().capitalize(),
             'home_dir':      Path.home().as_posix(),
             'downloads_dir': browser.config.downloads_dir,
             'max_steps':     max_steps,
