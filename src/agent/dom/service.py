@@ -36,6 +36,13 @@ INFORMATIVE_TAGS = frozenset({
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'label',
     'code', 'pre', 'th', 'td', 'article',
     'dl', 'dt', 'dd', 'img', 'table',
+    'li', 'figcaption', 'caption', 'blockquote', 'legend',
+})
+
+INLINE_ELEMENTS = frozenset({
+    'span', 'em', 'strong', 'b', 'i', 'small', 'abbr', 'code',
+    'mark', 'sub', 'sup', 'cite', 'q', 'u', 's', 'del', 'ins',
+    'time', 'kbd', 'var', 'samp', 'a',
 })
 
 EXCLUDED_TAGS = frozenset({
@@ -243,14 +250,43 @@ class DOM:
         # DOM node index -> layout index
         node_to_layout = {ni: li for li, ni in enumerate(layout_nodes)}
 
-        # innerText map: element node index -> concatenated text from direct text-node children
-        element_text: dict[int, str] = {}
-        for i, parent_idx in enumerate(node_parent):
-            if i < len(node_types) and node_types[i] == 3 and parent_idx >= 0:
-                val_idx = node_values[i] if i < len(node_values) else -1
-                text = s(val_idx).strip() if val_idx >= 0 else ''
-                if text:
-                    element_text[parent_idx] = (element_text.get(parent_idx, '') + ' ' + text).strip()
+        # children_map: element index -> ordered list of child indices (document order)
+        children_map: dict[int, list[int]] = {}
+        for i, p in enumerate(node_parent):
+            if p >= 0:
+                children_map.setdefault(p, []).append(i)
+
+        # inline_text: text content of an element including nested inline children,
+        # in document order. Descends into INLINE_ELEMENTS only — block children are
+        # excluded so containers don't absorb their children's text.
+        _it_cache: dict[int, str] = {}
+
+        def inline_text(ni: int) -> str:
+            if ni in _it_cache:
+                return _it_cache[ni]
+            parts: list[str] = []
+            for c in children_map.get(ni, []):
+                if c >= len(node_types):
+                    continue
+                if node_types[c] == 3:  # text node
+                    idx = node_values[c] if c < len(node_values) else -1
+                    t = s(idx).strip() if idx >= 0 else ''
+                    if t:
+                        parts.append(t)
+                elif node_types[c] == 1:
+                    ctag = s(node_names[c]).lower() if c < len(node_names) else ''
+                    if ctag in INLINE_ELEMENTS:
+                        t = inline_text(c)
+                        if t:
+                            parts.append(t)
+            result = ' '.join(parts)
+            _it_cache[ni] = result
+            return result
+
+        element_text: dict[int, str] = {
+            ni: t for ni in range(len(node_names))
+            if node_types[ni] == 1 and (t := inline_text(ni))
+        }
 
         def get_bounds(li: int):
             if li >= len(layout_bounds_raw):
