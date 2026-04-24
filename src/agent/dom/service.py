@@ -140,10 +140,12 @@ class DOM:
             print(f'[DEBUG] After parse: interactive={len(interactive)}, informative={len(informative)}, scrollable={len(scrollable)}')
 
             # Coverage check: remove elements hidden behind other elements
+            # elementFromPoint takes viewport coordinates, so subtract scroll offset
             if interactive:
                 payload = [
-                    {'tag': n.tag, 'cx': n.center.x, 'cy': n.center.y,
-                     'left': n.bounding_box.left, 'top': n.bounding_box.top}
+                    {'tag': n.tag,
+                     'cx': n.center.x - scroll_x, 'cy': n.center.y - scroll_y,
+                     'left': n.bounding_box.left - round(scroll_x), 'top': n.bounding_box.top - round(scroll_y)}
                     for n in interactive
                 ]
                 try:
@@ -161,7 +163,13 @@ class DOM:
             screenshot_capture_ms = 0.0
             if use_vision and interactive:
                 t1 = time.perf_counter()
-                boxes = [n.bounding_box.to_dict() for n in interactive]
+                # position:fixed in the mark JS is viewport-relative, so subtract scroll offset
+                boxes = [
+                    {'left': n.bounding_box.left - round(scroll_x),
+                     'top': n.bounding_box.top - round(scroll_y),
+                     'width': n.bounding_box.width, 'height': n.bounding_box.height}
+                    for n in interactive
+                ]
                 await self.session.execute_script(_MARK_PAGE_JS.replace('BOXES', json.dumps(boxes)))
                 await sleep(0.1)
                 screenshot = await self.session.get_screenshot()
